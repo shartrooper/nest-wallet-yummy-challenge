@@ -3,10 +3,11 @@
 A robust, auditable, and high-performance wallet service built with NestJS and PostgreSQL.
 
 ## Features
-- **Deterministic Concurrency**: Prevents deadlocks using ordered pessimistic locking.
-- **Financial Integrity**: Ledger-based accounting with PostgreSQL `DECIMAL` types and `CHECK` constraints.
-- **Idempotency**: Prevents duplicate transactions via a two-tier system (unique ledger keys + response caching).
-- **Automated Schema**: Schema application and connection health checks on startup.
+- **Deterministic Concurrency**: Prevents deadlocks using ordered pessimistic locking (lower UUID first).
+- **Financial Integrity**: Ledger-based accounting with PostgreSQL `DECIMAL(20, 2)` types and `CHECK` constraints.
+- **Idempotency**: Two-tier system featuring unique ledger keys and full response caching via interceptors.
+- **Automated Schema**: Automatic application of SQL schema and connection health checks on startup.
+- **Audit Trail**: Append-only movement ledger for full transaction traceability.
 
 ## Getting Started
 
@@ -36,11 +37,11 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
    ```
 
 ### Testing
-- Run all tests:
+- Run all unit tests:
   ```bash
   npm test
   ```
-- Run E2E tests:
+- Run E2E tests (Reliability & Concurrency):
   ```bash
   npm run test:e2e
   ```
@@ -48,9 +49,11 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
 ## API Endpoints
 
 ### Wallet
+- `POST /wallet/account`: Create a new wallet account for a user.
 - `GET /wallet/balance/:id`: Get the current balance of an account.
+- `GET /wallet/history/:id`: Get the full transaction history (movements) for an account.
 - `POST /wallet/deposit`: Deposit funds into an account.
 - `POST /wallet/withdraw`: Withdraw funds from an account.
 - `POST /wallet/transfer`: Transfer funds between two accounts.
 
-*All POST requests support the optional `x-idempotency-key` header.*
+*All POST requests support the optional `x-idempotency-key` header to ensure safe retries.*
