@@ -58,15 +58,16 @@ describe('WalletService', () => {
     it('should successfully deposit funds', async () => {
       const accountId = 'uuid';
       const amount = 100;
+      const idempotencyKey = 'key-123';
       
       (accountRepository.findByIdWithLock as jest.Mock).mockResolvedValue({ id: accountId, balance: '50.00' });
       
-      const result = await service.deposit(accountId, amount);
+      const result = await service.deposit(accountId, amount, idempotencyKey);
 
       expect(result.newBalance).toBe(150.0);
       expect(accountRepository.findByIdWithLock).toHaveBeenCalledWith(accountId, {});
       expect(accountRepository.updateBalance).toHaveBeenCalledWith(accountId, 150.0, {});
-      expect(accountRepository.recordMovement).toHaveBeenCalledWith(accountId, amount, 'DEPOSIT', {});
+      expect(accountRepository.recordMovement).toHaveBeenCalledWith(accountId, amount, 'DEPOSIT', {}, undefined, idempotencyKey);
     });
 
     it('should throw BadRequestException for negative amount', async () => {
@@ -78,14 +79,15 @@ describe('WalletService', () => {
     it('should successfully withdraw funds', async () => {
       const accountId = 'uuid';
       const amount = 50;
+      const idempotencyKey = 'key-456';
       
       (accountRepository.findByIdWithLock as jest.Mock).mockResolvedValue({ id: accountId, balance: '100.00' });
       
-      const result = await service.withdraw(accountId, amount);
+      const result = await service.withdraw(accountId, amount, idempotencyKey);
 
       expect(result.newBalance).toBe(50.0);
       expect(accountRepository.updateBalance).toHaveBeenCalledWith(accountId, 50.0, {});
-      expect(accountRepository.recordMovement).toHaveBeenCalledWith(accountId, amount, 'WITHDRAWAL', {});
+      expect(accountRepository.recordMovement).toHaveBeenCalledWith(accountId, amount, 'WITHDRAWAL', {}, undefined, idempotencyKey);
     });
 
     it('should throw UnprocessableEntityException for insufficient funds', async () => {
@@ -103,20 +105,23 @@ describe('WalletService', () => {
       const fromId = 'uuid-1';
       const toId = 'uuid-2';
       const amount = 50;
+      const idempotencyKey = 'key-789';
       
       (accountRepository.findByIdWithLock as jest.Mock)
-        .mockResolvedValueOnce({ id: fromId, balance: '100.00' }) // First call (lower ID)
-        .mockResolvedValueOnce({ id: toId, balance: '20.00' });   // Second call (higher ID)
+        .mockResolvedValueOnce({ id: fromId, balance: '100.00' })
+        .mockResolvedValueOnce({ id: toId, balance: '20.00' });
       
-      // We need to ensure deterministic ordering in the test if we want to check call arguments
-      // But for now, let's just check the result
-      const result = await service.transfer(fromId, toId, amount);
+      const result = await service.transfer(fromId, toId, amount, idempotencyKey);
 
       expect(result.fromNewBalance).toBe(50.0);
       expect(result.toNewBalance).toBe(70.0);
       
       expect(accountRepository.updateBalance).toHaveBeenCalledTimes(2);
-      expect(accountRepository.recordMovement).toHaveBeenCalledTimes(2);
+      // For transfers, we record two movements, both with the same idempotency key suffix or similar
+      // Actually, since movements.idempotency_key is UNIQUE, we need to distinguish them or only one gets the key
+      // Usually, we prefix the key: 'key-789:OUT' and 'key-789:IN'
+      expect(accountRepository.recordMovement).toHaveBeenCalledWith(fromId, amount, 'TRANSFER_OUT', {}, toId, `${idempotencyKey}:OUT`);
+      expect(accountRepository.recordMovement).toHaveBeenCalledWith(toId, amount, 'TRANSFER_IN', {}, fromId, `${idempotencyKey}:IN`);
     });
 
     it('should throw BadRequestException for transfer to same account', async () => {

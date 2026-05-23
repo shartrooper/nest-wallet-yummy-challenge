@@ -18,7 +18,7 @@ export class WalletService {
     return parseFloat(account.balance);
   }
 
-  async deposit(accountId: string, amount: number): Promise<{ newBalance: number }> {
+  async deposit(accountId: string, amount: number, idempotencyKey?: string): Promise<{ newBalance: number }> {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
@@ -34,7 +34,7 @@ export class WalletService {
         const newBalance = currentBalance + amount;
 
         await this.accountRepository.updateBalance(accountId, newBalance, client);
-        await this.accountRepository.recordMovement(accountId, amount, 'DEPOSIT', client);
+        await this.accountRepository.recordMovement(accountId, amount, 'DEPOSIT', client, undefined, idempotencyKey);
 
         return { newBalance };
       });
@@ -46,7 +46,7 @@ export class WalletService {
     }
   }
 
-  async withdraw(accountId: string, amount: number): Promise<{ newBalance: number }> {
+  async withdraw(accountId: string, amount: number, idempotencyKey?: string): Promise<{ newBalance: number }> {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
@@ -66,7 +66,7 @@ export class WalletService {
         const newBalance = currentBalance - amount;
 
         await this.accountRepository.updateBalance(accountId, newBalance, client);
-        await this.accountRepository.recordMovement(accountId, amount, 'WITHDRAWAL', client);
+        await this.accountRepository.recordMovement(accountId, amount, 'WITHDRAWAL', client, undefined, idempotencyKey);
 
         return { newBalance };
       });
@@ -82,7 +82,7 @@ export class WalletService {
     }
   }
 
-  async transfer(fromId: string, toId: string, amount: number): Promise<{ fromNewBalance: number; toNewBalance: number }> {
+  async transfer(fromId: string, toId: string, amount: number, idempotencyKey?: string): Promise<{ fromNewBalance: number; toNewBalance: number }> {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
@@ -92,7 +92,6 @@ export class WalletService {
 
     try {
       return await this.databaseService.transaction(async (client) => {
-        // Deterministic locking to prevent deadlocks: lock lower ID first
         const [firstId, secondId] = fromId < toId ? [fromId, toId] : [toId, fromId];
         
         const firstAccount = await this.accountRepository.findByIdWithLock(firstId, client);
@@ -115,13 +114,22 @@ export class WalletService {
         await this.accountRepository.updateBalance(fromId, fromNewBalance, client);
         await this.accountRepository.updateBalance(toId, toNewBalance, client);
 
-        // Record movements with reference IDs for audit trail
-        // TRANSFER_OUT from sender, points to TRANSFER_IN
-        // We'll record them and rely on the fact they are in the same transaction
-        // The reference_id can point to the account or another movement if we had its ID
-        // For now, let's just record them.
-        await this.accountRepository.recordMovement(fromId, amount, 'TRANSFER_OUT', client, toId);
-        await this.accountRepository.recordMovement(toId, amount, 'TRANSFER_IN', client, fromId);
+        await this.accountRepository.recordMovement(
+          fromId, 
+          amount, 
+          'TRANSFER_OUT', 
+          client, 
+          toId, 
+          idempotencyKey ? `${idempotencyKey}:OUT` : undefined
+        );
+        await this.accountRepository.recordMovement(
+          toId, 
+          amount, 
+          'TRANSFER_IN', 
+          client, 
+          fromId, 
+          idempotencyKey ? `${idempotencyKey}:IN` : undefined
+        );
 
         return { fromNewBalance, toNewBalance };
       });

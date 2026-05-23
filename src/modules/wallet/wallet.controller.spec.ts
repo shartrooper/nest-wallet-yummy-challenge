@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { NotFoundException } from '@nestjs/common';
 
 describe('WalletController', () => {
@@ -18,6 +19,13 @@ describe('WalletController', () => {
             deposit: jest.fn(),
             withdraw: jest.fn(),
             transfer: jest.fn(),
+          },
+        },
+        {
+          provide: IdempotencyService,
+          useValue: {
+            getResponse: jest.fn(),
+            saveResponse: jest.fn(),
           },
         },
       ],
@@ -55,7 +63,7 @@ describe('WalletController', () => {
       const result = await controller.deposit(dto);
 
       expect(result).toEqual({ newBalance: 150 });
-      expect(service.deposit).toHaveBeenCalledWith(dto.account_id, dto.amount);
+      expect(service.deposit).toHaveBeenCalledWith(dto.account_id, dto.amount, undefined);
     });
   });
 
@@ -67,7 +75,7 @@ describe('WalletController', () => {
       const result = await controller.withdraw(dto);
 
       expect(result).toEqual({ newBalance: 50 });
-      expect(service.withdraw).toHaveBeenCalledWith(dto.account_id, dto.amount);
+      expect(service.withdraw).toHaveBeenCalledWith(dto.account_id, dto.amount, undefined);
     });
   });
 
@@ -79,7 +87,7 @@ describe('WalletController', () => {
       const result = await controller.transfer(dto);
 
       expect(result).toEqual({ fromNewBalance: 70, toNewBalance: 50 });
-      expect(service.transfer).toHaveBeenCalledWith(dto.from_account_id, dto.to_account_id, dto.amount);
+      expect(service.transfer).toHaveBeenCalledWith(dto.from_account_id, dto.to_account_id, dto.amount, undefined);
     });
   });
 });
