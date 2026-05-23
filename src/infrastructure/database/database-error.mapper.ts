@@ -19,6 +19,9 @@ export class DatabaseErrorMapper {
         }
         return new BadRequestException('Database constraint violation');
 
+      case '22P02': // invalid_text_representation (e.g., invalid enum value)
+        return new BadRequestException('Invalid input format');
+
       case '23503': // foreign_key_violation
         return new BadRequestException('Related resource not found');
 
