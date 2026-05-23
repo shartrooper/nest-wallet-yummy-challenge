@@ -1,7 +1,7 @@
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { IdempotencyService } from './idempotency.service';
 import { ExecutionContext, CallHandler } from '@nestjs/common';
-import { of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 
 describe('IdempotencyInterceptor', () => {
   let interceptor: IdempotencyInterceptor;
