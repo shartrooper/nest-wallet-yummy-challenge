@@ -18,6 +18,18 @@ export class WalletService {
     return parseFloat(account.balance);
   }
 
+  async getHistory(accountId: string): Promise<any[]> {
+    const account = await this.accountRepository.findById(accountId);
+    if (!account) {
+      throw new NotFoundException(`Account with ID ${accountId} not found`);
+    }
+    return this.accountRepository.findMovementsByAccountId(accountId);
+  }
+
+  async createAccount(userId: string): Promise<any> {
+    return this.accountRepository.create(userId);
+  }
+
   async deposit(accountId: string, amount: number, idempotencyKey?: string): Promise<{ newBalance: number }> {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');

@@ -43,4 +43,21 @@ export class AccountRepository {
     const params = [accountId, amount, type, referenceId, idempotencyKey];
     await client.query(query, params);
   }
+
+  async create(userId: string): Promise<any> {
+    const query = 'INSERT INTO accounts (user_id, balance) VALUES ($1, $2) RETURNING *';
+    const params = [userId, 0];
+    const rows = await this.databaseService.query(query, params);
+    return rows[0];
+  }
+
+  async findMovementsByAccountId(accountId: string): Promise<any[]> {
+    const query = `
+      SELECT * FROM movements 
+      WHERE account_id = $1 
+      ORDER BY created_at DESC
+    `;
+    const params = [accountId];
+    return await this.databaseService.query(query, params);
+  }
 }

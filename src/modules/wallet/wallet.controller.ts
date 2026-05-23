@@ -16,6 +16,17 @@ export class WalletController {
     return { account_id: id, balance };
   }
 
+  @Get('history/:id')
+  async getHistory(@Param('id', new ParseUUIDPipe()) id: string) {
+    const history = await this.walletService.getHistory(id);
+    return { account_id: id, history };
+  }
+
+  @Post('account')
+  async createAccount(@Body('user_id', new ParseUUIDPipe()) userId: string) {
+    return this.walletService.createAccount(userId);
+  }
+
   @Post('deposit')
   async deposit(
     @Body() depositDto: DepositDto,
