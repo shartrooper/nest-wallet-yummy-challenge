@@ -30,12 +30,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap(async (body) => {
-        await this.idempotencyService.saveResponse(idempotencyKey, response.statusCode, body);
+        try {
+          await this.idempotencyService.saveResponse(idempotencyKey, response.statusCode, body);
+        } catch (err) {
+          // If another request already saved the response, we ignore the error
+          if (err.code !== '23505') throw err;
+        }
       }),
       catchError(async (err) => {
         // We also want to cache error responses if they are deterministic (e.g. 400, 422)
         if (err.status && err.status >= 400 && err.status < 500) {
-          await this.idempotencyService.saveResponse(idempotencyKey, err.status, err.response);
+          try {
+            await this.idempotencyService.saveResponse(idempotencyKey, err.status, err.response);
+          } catch (saveErr) {
+            // Ignore unique violations in race conditions
+            if (saveErr.code !== '23505') throw saveErr;
+          }
         }
         throw err;
       }),

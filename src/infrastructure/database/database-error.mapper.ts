@@ -11,6 +11,9 @@ export class DatabaseErrorMapper {
     
     switch (error.code) {
       case '23505': // unique_violation
+        if (error.constraint === 'movements_idempotency_key_key') {
+          return new ConflictException('Transaction with this idempotency key already processed');
+        }
         return new ConflictException('Resource already exists');
       
       case '23514': // check_violation

@@ -90,16 +90,16 @@ export class SchemaRunnerService implements OnModuleInit {
       const schemaPath = path.join(__dirname, 'schema.sql');
       const schema = fs.readFileSync(schemaPath, 'utf8');
       
-      // Split by ; but handle potential ones inside triggers/functions
-      // For simplicity in this technical test, we can try executing the whole block
-      // PostgreSQL handles multiple statements in one query call.
-      await this.databaseService.query(schema);
+      await this.databaseService.transaction(async (client) => {
+        // Acquire a transactional advisory lock to prevent concurrent schema updates
+        // 123456789 is a chosen constant ID for this purpose
+        await client.query('SELECT pg_advisory_xact_lock(123456789)');
+        await client.query(schema);
+      });
       
       this.logger.log('Database schema applied successfully.');
     } catch (error) {
       this.logger.error('Error applying database schema:', error);
-      // We might want to throw here to prevent the app from starting with an invalid DB state
-      // throw error;
     }
   }
 }
