@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { DatabaseService } from './database.service';
+import { ConfigService } from '@nestjs/config';
+import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,16 +9,59 @@ import * as path from 'path';
 export class SchemaRunnerService implements OnModuleInit {
   private readonly logger = new Logger(SchemaRunnerService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async onModuleInit() {
     try {
+      await this.bootstrapDatabase();
       await this.waitForConnection();
       await this.runSchema();
     } catch (error) {
       this.logger.error(`Failed to initialize database: ${error.message}`);
-      // In a real production app, we might want to exit the process here
-      // process.exit(1);
+    }
+  }
+
+  private async bootstrapDatabase() {
+    const dbName = this.configService.get<string>('DB_NAME');
+    const user = this.configService.get<string>('DB_USER');
+    const password = this.configService.get<string>('DB_PASSWORD');
+    const host = this.configService.get<string>('DB_HOST');
+    const port = this.configService.get<number>('DB_PORT');
+
+    // Connect to the default 'postgres' database to check/create the target database
+    const bootstrapPool = new Pool({
+      host,
+      port,
+      user,
+      password,
+      database: 'postgres',
+    });
+
+    try {
+      this.logger.log(`Checking if database "${dbName}" exists...`);
+      const result = await bootstrapPool.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [dbName],
+      );
+
+      if (result.rowCount === 0) {
+        this.logger.log(`Database "${dbName}" does not exist. Creating...`);
+        // Note: CREATE DATABASE cannot be executed in a transaction block
+        await bootstrapPool.query(`CREATE DATABASE ${dbName}`);
+        this.logger.log(`Database "${dbName}" created successfully.`);
+      } else {
+        this.logger.log(`Database "${dbName}" already exists.`);
+      }
+    } catch (error) {
+      this.logger.warn(`Could not bootstrap database: ${error.message}`);
+      // We don't throw here because the DB might already exist but the user 
+      // doesn't have permission to list pg_database (common in some managed DBs).
+      // We let waitForConnection handle the final verdict.
+    } finally {
+      await bootstrapPool.end();
     }
   }
 
