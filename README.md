@@ -30,8 +30,15 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
    API_KEY=evaluator-secret-123
    ```
 
-### Running the Application
-1. Start the database (Docker or Native).
+### Running the Application (Single Command Docker)
+To deploy the entire stack (Database + Application) in a clean machine:
+```bash
+docker-compose up --build
+```
+The API will be available at `http://localhost:3000/docs`.
+
+### Running Locally (Native)
+1. Start the database: `docker-compose up db -d`
 2. Start the application:
    ```bash
    npm run start:dev
@@ -41,6 +48,7 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
 ### Testing
 - **Unit Tests:** `npm test`
 - **Reliability & Security E2E:** `npm run test:e2e` (Verifies concurrency, idempotency, and auth).
+- **Test inside Docker:** `docker-compose run --rm app npm run test:e2e`
 
 ## API Endpoints
 

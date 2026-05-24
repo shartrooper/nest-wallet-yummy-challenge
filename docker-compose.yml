@@ -3,8 +3,10 @@ services:
     build: .
     ports:
       - "${PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:${DB_PORT:-5432}/${DB_NAME:-nest_wallet}
     depends_on:
       db:
         condition: service_healthy
