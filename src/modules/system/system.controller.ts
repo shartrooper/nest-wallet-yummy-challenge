@@ -1,5 +1,5 @@
 import { Controller, Get, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiHeader, ApiResponse, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiSecurity } from '@nestjs/swagger';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { Public } from '../../common/decorators/public.decorator';
 
