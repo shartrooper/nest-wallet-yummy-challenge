@@ -3,10 +3,12 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/infrastructure/database/database.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('Wallet Reliability & Integrity (e2e)', () => {
   let app: INestApplication;
   let databaseService: DatabaseService;
+  let apiKey: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -16,29 +18,59 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
     databaseService = app.get<DatabaseService>(DatabaseService);
+    apiKey = app.get<ConfigService>(ConfigService).get<string>('API_KEY');
+    
+    if (!apiKey) {
+      throw new Error('API_KEY must be set in environment for E2E tests');
+    }
   });
 
   afterAll(async () => {
     await app.close();
   });
 
+  describe('Security & Authentication', () => {
+    it('should return 401 when API key is missing', async () => {
+      // First create an account so we know it exists
+      const acc = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: '00000000-0000-0000-0000-000000000001' });
+      const id = acc.body.id;
+
+      const res = await request(app.getHttpServer()).get(`/wallet/balance/${id}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when API key is invalid', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/wallet/balance/00000000-0000-0000-0000-000000000001')
+        .set('x-api-key', 'wrong-key');
+      expect(res.status).toBe(401);
+    });
+
+    it('should allow public access to health check', async () => {
+      const res = await request(app.getHttpServer()).get('/system/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ok');
+    });
+  });
+
   describe('Concurrency & Race Conditions', () => {
     it('should handle concurrent transfers without double-spending (Deterministic Locking)', async () => {
       console.log('\n[Evidence] Scenario: 20 Parallel Transfers of $10 from $100 balance');
       
-      const userA = '00000000-0000-0000-0000-000000000011';
-      const userB = '00000000-0000-0000-0000-000000000012';
+      const userA = '00000000-0000-0000-0000-000000000111';
+      const userB = '00000000-0000-0000-0000-000000000112';
       
-      const accA = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: userA });
-      const accB = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: userB });
+      const accA = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userA });
+      const accB = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userB });
       const accAId = accA.body.id;
       const accBId = accB.body.id;
 
-      await request(app.getHttpServer()).post('/wallet/deposit').send({ account_id: accAId, amount: 100 });
+      await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: accAId, amount: 100 });
 
       const transferRequests = Array.from({ length: 20 }).map((_, i) => 
         request(app.getHttpServer())
           .post('/wallet/transfer')
+          .set('x-api-key', apiKey)
           .set('x-idempotency-key', `concurrency-test-${i}`)
           .send({ from_account_id: accAId, to_account_id: accBId, amount: 10 })
       );
@@ -52,8 +84,8 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       expect(successes.length).toBe(10);
       expect(failures.length).toBe(10);
 
-      const balA = await request(app.getHttpServer()).get(`/wallet/balance/${accAId}`);
-      const balB = await request(app.getHttpServer()).get(`/wallet/balance/${accBId}`);
+      const balA = await request(app.getHttpServer()).get(`/wallet/balance/${accAId}`).set('x-api-key', apiKey);
+      const balB = await request(app.getHttpServer()).get(`/wallet/balance/${accBId}`).set('x-api-key', apiKey);
 
       console.log(`[Evidence] Final Balances -> Account A: ${balA.body.balance}, Account B: ${balB.body.balance}`);
       
@@ -68,14 +100,15 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
     it('should only record one movement and one balance change for repeated requests', async () => {
       console.log('\n[Evidence] Scenario: Brute-forcing 5 identical deposit requests with same key');
       
-      const user = '00000000-0000-0000-0000-000000000021';
-      const acc = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: user });
+      const user = '00000000-0000-0000-0000-000000000221';
+      const acc = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: user });
       const accId = acc.body.id;
       const key = `idempotency-brute-force-${Date.now()}`;
 
       const requests = Array.from({ length: 5 }).map(() => 
         request(app.getHttpServer())
           .post('/wallet/deposit')
+          .set('x-api-key', apiKey)
           .set('x-idempotency-key', key)
           .send({ account_id: accId, amount: 50 })
       );
@@ -84,45 +117,39 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       
       console.log(`[Evidence] Received Status Codes: ${results.map(r => r.status).join(', ')}`);
       
-      // We accept 201 (success/cached success) or 409 (DB safety net caught the race)
       results.forEach(res => expect([201, 409]).toContain(res.status));
 
-      // Verify Ledger
-      const historyRes = await request(app.getHttpServer()).get(`/wallet/history/${accId}`);
+      const historyRes = await request(app.getHttpServer()).get(`/wallet/history/${accId}`).set('x-api-key', apiKey);
       console.log(`[Evidence] Movements in ledger for this account: ${historyRes.body.history.length}`);
       expect(historyRes.body.history.length).toBe(1);
 
-      const finalBal = await request(app.getHttpServer()).get(`/wallet/balance/${accId}`);
+      const finalBal = await request(app.getHttpServer()).get(`/wallet/balance/${accId}`).set('x-api-key', apiKey);
       console.log(`[Evidence] Final Balance: ${finalBal.body.balance} (Expected 50, not 250)`);
       expect(parseFloat(finalBal.body.balance)).toBe(50);
     });
   });
 
   describe('Middleware/DB Desync (The "Ghost" Success)', () => {
-    it('should return 422 when movement exists but idempotency cache is missing', async () => {
+    it('should return 409 when movement exists but idempotency cache is missing', async () => {
       console.log('\n[Evidence] Scenario: Simulating missing cache but existing ledger record');
       
-      const user = '00000000-0000-0000-0000-000000000031';
-      const acc = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: user });
+      const user = '00000000-0000-0000-0000-000000000331';
+      const acc = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: user });
       const accId = acc.body.id;
       const key = `desync-test-${Date.now()}`;
 
-      // 1. Manually inject movement into DB (simulating a success that didn't get cached)
       await databaseService.query(
         'INSERT INTO movements (account_id, amount, type, idempotency_key) VALUES ($1, $2, $3, $4)',
         [accId, 10, 'DEPOSIT', key]
       );
 
-      // 2. Call API with same key
       const res = await request(app.getHttpServer())
         .post('/wallet/deposit')
+        .set('x-api-key', apiKey)
         .set('x-idempotency-key', key)
         .send({ account_id: accId, amount: 10 });
 
       console.log(`[Evidence] API Response status: ${res.status}`);
-      console.log(`[Evidence] API Error Body: ${JSON.stringify(res.body)}`);
-
-      // We expect 409 because the DatabaseErrorMapper catches the unique constraint violation on the movement
       expect(res.status).toBe(409);
       expect(res.body.message).toContain('idempotency key already processed');
     });
@@ -132,32 +159,29 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
     it('should handle circular transfers (A->B, B->A) without deadlocking', async () => {
       console.log('\n[Evidence] Scenario: Parallel circular transfers (A->B and B->A)');
       
-      const userA = '00000000-0000-0000-0000-000000000041';
-      const userB = '00000000-0000-0000-0000-000000000042';
+      const userA = '00000000-0000-0000-0000-000000000441';
+      const userB = '00000000-0000-0000-0000-000000000442';
       
-      const accA = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: userA });
-      const accB = await request(app.getHttpServer()).post('/wallet/account').send({ user_id: userB });
+      const accA = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userA });
+      const accB = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userB });
       const idA = accA.body.id;
       const idB = accB.body.id;
 
-      await request(app.getHttpServer()).post('/wallet/deposit').send({ account_id: idA, amount: 100 });
-      await request(app.getHttpServer()).post('/wallet/deposit').send({ account_id: idB, amount: 100 });
+      await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: idA, amount: 100 });
+      await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: idB, amount: 100 });
 
       const reqs = [
-        request(app.getHttpServer()).post('/wallet/transfer').set('x-idempotency-key', 'circ-1').send({ from_account_id: idA, to_account_id: idB, amount: 50 }),
-        request(app.getHttpServer()).post('/wallet/transfer').set('x-idempotency-key', 'circ-2').send({ from_account_id: idB, to_account_id: idA, amount: 50 })
+        request(app.getHttpServer()).post('/wallet/transfer').set('x-api-key', apiKey).set('x-idempotency-key', 'circ-1').send({ from_account_id: idA, to_account_id: idB, amount: 50 }),
+        request(app.getHttpServer()).post('/wallet/transfer').set('x-api-key', apiKey).set('x-idempotency-key', 'circ-2').send({ from_account_id: idB, to_account_id: idA, amount: 50 })
       ];
 
       const results = await Promise.all(reqs);
-      console.log(`[Evidence] Status Codes: ${results[0].status}, ${results[1].status}`);
-
       expect(results[0].status).toBe(201);
       expect(results[1].status).toBe(201);
 
-      const balA = await request(app.getHttpServer()).get(`/wallet/balance/${idA}`);
-      const balB = await request(app.getHttpServer()).get(`/wallet/balance/${idB}`);
+      const balA = await request(app.getHttpServer()).get(`/wallet/balance/${idA}`).set('x-api-key', apiKey);
+      const balB = await request(app.getHttpServer()).get(`/wallet/balance/${idB}`).set('x-api-key', apiKey);
 
-      console.log(`[Evidence] Final Balances: A=${balA.body.balance}, B=${balB.body.balance}`);
       expect(parseFloat(balA.body.balance)).toBe(100);
       expect(parseFloat(balB.body.balance)).toBe(100);
     });

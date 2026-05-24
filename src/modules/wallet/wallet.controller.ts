@@ -1,10 +1,13 @@
 import { Controller, Get, Post, Body, Param, ParseUUIDPipe, UseInterceptors, Headers } from '@nestjs/common';
+import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { WalletService } from './wallet.service';
 import { DepositDto } from './dto/deposit.dto';
 import { WithdrawalDto } from './dto/withdrawal.dto';
 import { TransferDto } from './dto/transfer.dto';
 import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
 
+@ApiTags('Wallet')
+@ApiSecurity('api-key')
 @Controller('wallet')
 @UseInterceptors(IdempotencyInterceptor)
 export class WalletController {

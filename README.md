@@ -2,18 +2,22 @@
 
 A robust, auditable, and high-performance wallet service built with NestJS and PostgreSQL.
 
+## 🚀 Live Demo & Documentation
+- **API Documentation (Swagger):** `[Your Cloud URL]/docs` (e.g., `https://nest-wallet.up.railway.app/docs`)
+- **Security Key:** `evaluator-secret-123` (Use the **Authorize** button in Swagger)
+
 ## Features
 - **Deterministic Concurrency**: Prevents deadlocks using ordered pessimistic locking (lower UUID first).
 - **Financial Integrity**: Ledger-based accounting with PostgreSQL `DECIMAL(20, 2)` types and `CHECK` constraints.
-- **Idempotency**: Two-tier system featuring unique ledger keys and full response caching via interceptors.
-- **Automated Schema**: Automatic application of SQL schema and connection health checks on startup.
-- **Audit Trail**: Append-only movement ledger for full transaction traceability.
+- **Two-Tier Idempotency**: Unique ledger keys + Response caching interceptor for 100% reliable retries.
+- **Security**: Global API Key protection with public health checks.
+- **Seeding**: Protected `/system/seed` endpoint to instantly prepare demo accounts for evaluation.
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js (v24+)
-- PostgreSQL (Local installation or via Docker)
+- PostgreSQL
 
 ### Installation
 1. Clone the repository.
@@ -21,39 +25,37 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
    ```bash
    npm install
    ```
-3. Copy `.env.example` to `.env` and configure your database credentials.
+3. Copy `.env.example` to `.env` and configure:
+   ```env
+   API_KEY=evaluator-secret-123
+   ```
 
 ### Running the Application
-1. Start the database:
-   - **Using Docker (Optional):**
-     ```bash
-     docker-compose up -d db
-     ```
-   - **Using Native PostgreSQL:** Ensure your local PostgreSQL instance is running and matches the credentials in your `.env` file.
-
+1. Start the database (Docker or Native).
 2. Start the application:
    ```bash
    npm run start:dev
    ```
+3. Visit `http://localhost:3000/docs`.
 
 ### Testing
-- Run all unit tests:
-  ```bash
-  npm test
-  ```
-- Run E2E tests (Reliability & Concurrency):
-  ```bash
-  npm run test:e2e
-  ```
+- **Unit Tests:** `npm test`
+- **Reliability & Security E2E:** `npm run test:e2e` (Verifies concurrency, idempotency, and auth).
 
 ## API Endpoints
 
-### Wallet
-- `POST /wallet/account`: Create a new wallet account for a user.
-- `GET /wallet/balance/:id`: Get the current balance of an account.
-- `GET /wallet/history/:id`: Get the full transaction history (movements) for an account.
-- `POST /wallet/deposit`: Deposit funds into an account.
-- `POST /wallet/withdraw`: Withdraw funds from an account.
-- `POST /wallet/transfer`: Transfer funds between two accounts.
+### System
+- `GET /system/health`: (Public) Check service status.
+- `POST /system/seed`: (Locked) Seed demo accounts with initial balances. (Idempotent: can be run multiple times to reset balances of demo accounts).
+- `POST /system/reset`: (Locked) Wipe all data (Movements, Accounts, Idempotency) to start from a completely clean state.
 
-*All POST requests support the optional `x-idempotency-key` header to ensure safe retries.*
+### Wallet (All require `x-api-key`)
+- `POST /wallet/account`: Create a new account.
+- `GET /wallet/balance/:id`: Check balance.
+- `GET /wallet/history/:id`: View transaction ledger.
+- `POST /wallet/deposit` / `POST /wallet/withdraw` / `POST /wallet/transfer`.
+
+## Documentation
+- [Architecture & Design Decisions](.docs/DESIGN.md)
+- [Technical Specifications](.docs/DETAILS.md)
+- [Project Defense](.docs/DEFENSA.md)
