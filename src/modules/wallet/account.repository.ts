@@ -45,10 +45,23 @@ export class AccountRepository {
   }
 
   async create(userId: string): Promise<any> {
-    const query = 'INSERT INTO accounts (user_id, balance) VALUES ($1, $2) RETURNING *';
-    const params = [userId, 0];
-    const rows = await this.databaseService.query(query, params);
-    return rows[0];
+    // Use INSERT ... ON CONFLICT DO NOTHING so repeated calls are idempotent.
+    // If the row already exists, fall back to a SELECT to return it.
+    const upsertQuery = `
+      INSERT INTO accounts (user_id, balance)
+      VALUES ($1, $2)
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING *
+    `;
+    const rows = await this.databaseService.query(upsertQuery, [userId, 0]);
+    if (rows.length > 0) return rows[0];
+
+    // Row already existed — fetch and return it
+    const selectRows = await this.databaseService.query(
+      'SELECT * FROM accounts WHERE user_id = $1',
+      [userId],
+    );
+    return selectRows[0];
   }
 
   async findMovementsByAccountId(accountId: string): Promise<any[]> {

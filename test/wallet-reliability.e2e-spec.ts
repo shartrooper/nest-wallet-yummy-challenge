@@ -5,10 +5,60 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/infrastructure/database/database.service';
 import { ConfigService } from '@nestjs/config';
 
+/**
+ * Fixed user_ids used across all test scenarios.
+ * These are collected here so the afterAll teardown can wipe them cleanly.
+ */
+const TEST_USER_IDS = [
+  '00000000-0000-0000-0000-000000000001', // Security test
+  '00000000-0000-0000-0000-000000000111', // Concurrency A
+  '00000000-0000-0000-0000-000000000112', // Concurrency B
+  '00000000-0000-0000-0000-000000000221', // Idempotency
+  '00000000-0000-0000-0000-000000000331', // Ghost-success / desync
+  '00000000-0000-0000-0000-000000000441', // Deadlock A
+  '00000000-0000-0000-0000-000000000442', // Deadlock B
+];
+
+/** Idempotency-key prefixes written during tests — cleaned up in teardown. */
+const TEST_IDEMPOTENCY_PREFIXES = [
+  'concurrency-test-',
+  'idempotency-brute-force-',
+  'desync-test-',
+  'circ-1',
+  'circ-2',
+];
+
 describe('Wallet Reliability & Integrity (e2e)', () => {
   let app: INestApplication;
   let databaseService: DatabaseService;
   let apiKey: string;
+
+  /** Wipes all data created by this test suite. Safe to call before or after tests. */
+  async function teardownTestData() {
+    const accountRows = await databaseService.query<{ id: string }>(
+      `SELECT id FROM accounts WHERE user_id = ANY($1::uuid[])`,
+      [TEST_USER_IDS],
+    );
+    const accountIds = accountRows.map((r) => r.id);
+
+    if (accountIds.length > 0) {
+      await databaseService.query(
+        `DELETE FROM movements WHERE account_id = ANY($1::uuid[])`,
+        [accountIds],
+      );
+      await databaseService.query(
+        `DELETE FROM accounts WHERE id = ANY($1::uuid[])`,
+        [accountIds],
+      );
+    }
+
+    for (const prefix of TEST_IDEMPOTENCY_PREFIXES) {
+      await databaseService.query(
+        `DELETE FROM idempotency_responses WHERE key LIKE $1`,
+        [`${prefix}%`],
+      );
+    }
+  }
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -18,15 +68,24 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
     databaseService = app.get<DatabaseService>(DatabaseService);
-    apiKey = app.get<ConfigService>(ConfigService).get<string>('API_KEY');
-    
+    apiKey = app.get<ConfigService>(ConfigService).get<string>('API_KEY') as string;
+
     if (!apiKey) {
       throw new Error('API_KEY must be set in environment for E2E tests');
     }
+
+    // Clean up any stale data from a previously interrupted run
+    await teardownTestData();
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await teardownTestData();
+    } catch (err) {
+      console.error('[Teardown] Error cleaning up test data:', err.message);
+    } finally {
+      await app.close();
+    }
   });
 
   describe('Security & Authentication', () => {
@@ -56,10 +115,10 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
   describe('Concurrency & Race Conditions', () => {
     it('should handle concurrent transfers without double-spending (Deterministic Locking)', async () => {
       console.log('\n[Evidence] Scenario: 20 Parallel Transfers of $10 from $100 balance');
-      
+
       const userA = '00000000-0000-0000-0000-000000000111';
       const userB = '00000000-0000-0000-0000-000000000112';
-      
+
       const accA = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userA });
       const accB = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userB });
       const accAId = accA.body.id;
@@ -67,7 +126,7 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
 
       await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: accAId, amount: 100 });
 
-      const transferRequests = Array.from({ length: 20 }).map((_, i) => 
+      const transferRequests = Array.from({ length: 20 }).map((_, i) =>
         request(app.getHttpServer())
           .post('/wallet/transfer')
           .set('x-api-key', apiKey)
@@ -88,7 +147,7 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       const balB = await request(app.getHttpServer()).get(`/wallet/balance/${accBId}`).set('x-api-key', apiKey);
 
       console.log(`[Evidence] Final Balances -> Account A: ${balA.body.balance}, Account B: ${balB.body.balance}`);
-      
+
       const totalBalance = parseFloat(balA.body.balance) + parseFloat(balB.body.balance);
       expect(totalBalance).toBe(100);
       expect([0, 100]).toContain(parseFloat(balA.body.balance));
@@ -99,13 +158,13 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
   describe('Deep Idempotency (Ledger Integrity)', () => {
     it('should only record one movement and one balance change for repeated requests', async () => {
       console.log('\n[Evidence] Scenario: Brute-forcing 5 identical deposit requests with same key');
-      
+
       const user = '00000000-0000-0000-0000-000000000221';
       const acc = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: user });
       const accId = acc.body.id;
       const key = `idempotency-brute-force-${Date.now()}`;
 
-      const requests = Array.from({ length: 5 }).map(() => 
+      const requests = Array.from({ length: 5 }).map(() =>
         request(app.getHttpServer())
           .post('/wallet/deposit')
           .set('x-api-key', apiKey)
@@ -114,9 +173,9 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       );
 
       const results = await Promise.all(requests);
-      
+
       console.log(`[Evidence] Received Status Codes: ${results.map(r => r.status).join(', ')}`);
-      
+
       results.forEach(res => expect([201, 409]).toContain(res.status));
 
       const historyRes = await request(app.getHttpServer()).get(`/wallet/history/${accId}`).set('x-api-key', apiKey);
@@ -132,7 +191,7 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
   describe('Middleware/DB Desync (The "Ghost" Success)', () => {
     it('should return 409 when movement exists but idempotency cache is missing', async () => {
       console.log('\n[Evidence] Scenario: Simulating missing cache but existing ledger record');
-      
+
       const user = '00000000-0000-0000-0000-000000000331';
       const acc = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: user });
       const accId = acc.body.id;
@@ -158,10 +217,10 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
   describe('Deadlock Prevention', () => {
     it('should handle circular transfers (A->B, B->A) without deadlocking', async () => {
       console.log('\n[Evidence] Scenario: Parallel circular transfers (A->B and B->A)');
-      
+
       const userA = '00000000-0000-0000-0000-000000000441';
       const userB = '00000000-0000-0000-0000-000000000442';
-      
+
       const accA = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userA });
       const accB = await request(app.getHttpServer()).post('/wallet/account').set('x-api-key', apiKey).send({ user_id: userB });
       const idA = accA.body.id;
