@@ -49,5 +49,20 @@ En lugar de buscar cobertura porcentual genérica, los tests se enfocan en los r
 *   **Bootstrapping Automático:** El sistema detecta si la base de datos existe al iniciar y la crea/migra automáticamente, facilitando el despliegue en entornos locales (Laragon) o nube (AWS ECS/Fargate).
 *   **Restricciones de Integridad (Safety Net):** Se añadió un `CHECK (balance >= 0)` directamente en la base de datos. Incluso si hay un bug en el código, la base de datos impedirá físicamente un saldo negativo.
 
+## 9. Riesgos en Producción y Mitigaciones
+Entendiendo que ningún sistema es infalible, estos son los principales puntos de quiebre identificados y cómo se abordarían:
+
+*   **1. Agotamiento del Pool de Conexiones (Alto riesgo):** Al escalar las instancias de este servicio bajo alto tráfico, PostgreSQL alcanzará rápidamente su límite de `max_connections` nativo. Dado que la aplicación usa bloqueos de fila activos, la contención retrasará la liberación de conexiones.
+    *   *Mitigación:* Implementar **PgBouncer** como proxy de pool de conexiones para multiplexado miles de conexiones entrantes, junto a patrones de cortocircuitado en NestJS para fallar rápido (`503 Service Unavailable`) y proteger el motor SQL.
+
+*   **2. Contención de Base de Datos (Cuentas "Hotspot"):** Si una cuenta central recibe cientos de transferencias por segundo, el bloqueo pesimista (`SELECT FOR UPDATE`) formará un cuello de botella con las conexiones.
+    *   *Mitigación:* Liquidación asíncrona. En lugar de actualizar el saldo en tiempo real (lock síncrono), se insertan los cobros como registros pendientes y un worker crea un `batch` en diferido cada 5 minutos.
+
+*   **3. Bloqueos Prolongados por Llamadas a Terceros:** Si en el futuro se integra un proceso externo (ej. webhook ) *durante* el depósito, la latencia de la red mantendrá la transacción ACID y la fila bloqueadas, colgando la app.
+    *   *Mitigación:* Cero llamadas de red externas (I/O) mientras un bloque `BEGIN ... COMMIT` esté abierto.
+
+*   **4. Crecimiento Infinito de Datos (Table Bloat):** Las tablas `movements` e `idempotency_responses` son "append-only". Es un escenario poco probable para el alcance de este proyecto, pero es teoricamente posible que con el tiempo sus índices B-Tree no entrarán en memoria RAM, hundiendo el rendimiento de lectura.
+    *   *Mitigación:* Configurar particionamiento nativo de tabla en PostgreSQL (mensual) para `movements`. Para la idempotencia, implementar un *TTL Job* que purgue los registros mayores a 30 días, ya que los reintentos de cliente ocurren en rangos de segundos.
+
 ---
 **Resumen de Defensa:** "Prioricé la **consistencia y auditabilidad** por encima de la complejidad técnica innecesaria. El sistema es simple pero blindado mediante transacciones determinísticas y restricciones nativas de PostgreSQL."
