@@ -4,7 +4,7 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
 
 ## 🚀 Live Demo & Documentation
 - **API Documentation (Swagger):** `[Your Cloud URL]/docs` (e.g., `https://nest-wallet.up.railway.app/docs`)
-- **Security Key:** `evaluator-secret-123` (Use the **Authorize** button in Swagger)
+- **Security Key:** `example-evaluator-secret-123` (Use the **Authorize** button in Swagger)
 
 ## Features
 - **Deterministic Concurrency**: Prevents deadlocks using ordered pessimistic locking (lower UUID first).
@@ -27,7 +27,7 @@ A robust, auditable, and high-performance wallet service built with NestJS and P
    ```
 3. Copy `.env.example` to `.env` and configure:
    ```env
-   API_KEY=evaluator-secret-123
+   API_KEY=example-evaluator-secret-123
    ```
 
 ### Running the Application (Single Command Docker)
@@ -64,6 +64,4 @@ The API will be available at `http://localhost:3000/docs`.
 - `POST /wallet/deposit` / `POST /wallet/withdraw` / `POST /wallet/transfer`.
 
 ## Documentation
-- [Architecture & Design Decisions](.docs/DESIGN.md)
-- [Technical Specifications](.docs/DETAILS.md)
-- [Project Defense](.docs/DEFENSA.md)
+- [Diagram & Specs](diagrama-arquitectura.md)

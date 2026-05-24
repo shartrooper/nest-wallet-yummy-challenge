@@ -66,7 +66,7 @@ sequenceDiagram
 ```
 
 ### Explicación Técnica de las Defensas:
-1. **Requests en Paralelo:** Resueltos mediante *Pessimistic Locking* (`SELECT FOR UPDATE`) para encolar operaciones sobre la misma cuenta a nivel motor SQL. Los deadlocks en transferencias se evitan al ordenar lexicográficamente las cuentas y bloquear siempre primero la de menor ID.
+1. **Requests en Paralelo:** Resueltos mediante *Pessimistic Locking* (`SELECT FOR UPDATE`) para encolar operaciones sobre la misma cuenta a nivel motor SQL. Los posibles deadlocks en transferencias se evitan al ordenar lexicográficamente las cuentas y bloquear siempre primero la de menor ID.
 2. **Reintentos del Cliente:** Sistema de dos niveles (Two-Tier). Primero, un Interceptor de NestJS cachea las respuestas exitosas de cada `x-idempotency-key`. Segundo, la tabla `movements` de PostgreSQL tiene un constraint `UNIQUE` sobre la misma clave como defensa absoluta.
-3. **Reinicio de Proceso a la mitad:** Si el contenedor Node.js se apaga en medio del procesamiento de un depósito, no hay daño porque toda modificación (tanto cuentas como ledger inmutable) se ejecuta en una misma transacción ACID. El desconecte de la BD lanza un `ROLLBACK` seguro automático en Postgres.
+3. **Reinicio de Proceso a la mitad:** Si el contenedor Node.js se apaga en medio del procesamiento de un depósito, no hay daño porque toda modificación (tanto cuentas como ledger inmutable) se ejecuta en una misma transacción ACID. La desconexión de la BD arroja un `ROLLBACK` seguro automático en Postgres.
 4. **Falla de BD:** La persistencia mantiene el estado válido 100% de las veces garantizado por constraints físicos a nivel tabla (`balance >= 0`). La capa de aplicación tiene políticas de reconexión y `DatabaseErrorMapper` para no exponer detalles de persistencia al cliente.
