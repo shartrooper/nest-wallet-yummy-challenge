@@ -12,12 +12,23 @@ END $$;
 -- Accounts table
 CREATE TABLE IF NOT EXISTS accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL UNIQUE,
+    user_id UUID NOT NULL,
     balance DECIMAL(20, 2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT positive_balance CHECK (balance >= 0)
 );
+
+-- Ensure unique constraint on user_id exists (safe to re-run)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'accounts_user_id_key' AND conrelid = 'accounts'::regclass
+    ) THEN
+        ALTER TABLE accounts ADD CONSTRAINT accounts_user_id_key UNIQUE (user_id);
+    END IF;
+END $$;
 
 -- Movements table
 CREATE TABLE IF NOT EXISTS movements (
