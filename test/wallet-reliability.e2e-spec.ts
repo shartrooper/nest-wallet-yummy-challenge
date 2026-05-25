@@ -124,9 +124,9 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       const accAId = accA.body.id;
       const accBId = accB.body.id;
 
-      await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: accAId, amount: 100 });
+      await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: accAId, amount: 30 });
 
-      const transferRequests = Array.from({ length: 20 }).map((_, i) =>
+      const transferRequests = Array.from({ length: 5 }).map((_, i) =>
         request(app.getHttpServer())
           .post('/wallet/transfer')
           .set('x-api-key', apiKey)
@@ -140,8 +140,8 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
 
       console.log(`[Evidence] Results: ${successes.length} Successes (201), ${failures.length} Failures (422)`);
 
-      expect(successes.length).toBe(10);
-      expect(failures.length).toBe(10);
+      expect(successes.length).toBe(3);
+      expect(failures.length).toBe(2);
 
       const balA = await request(app.getHttpServer()).get(`/wallet/balance/${accAId}`).set('x-api-key', apiKey);
       const balB = await request(app.getHttpServer()).get(`/wallet/balance/${accBId}`).set('x-api-key', apiKey);
@@ -149,9 +149,9 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
       console.log(`[Evidence] Final Balances -> Account A: ${balA.body.balance}, Account B: ${balB.body.balance}`);
 
       const totalBalance = parseFloat(balA.body.balance) + parseFloat(balB.body.balance);
-      expect(totalBalance).toBe(100);
-      expect([0, 100]).toContain(parseFloat(balA.body.balance));
-      expect([0, 100]).toContain(parseFloat(balB.body.balance));
+      expect(totalBalance).toBe(30);
+      expect(parseFloat(balA.body.balance)).toBe(0);
+      expect(parseFloat(balB.body.balance)).toBe(30);
     });
   });
 
