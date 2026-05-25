@@ -48,7 +48,7 @@ The API will be available at `http://localhost:3000/docs`.
 ### Testing
 - **Unit Tests:** `npm test`
 - **Reliability & Security E2E:** `npm run test:e2e` (Verifies concurrency, idempotency, and auth).
-- **Test inside Docker:** `docker-compose run --rm app npm run test:e2e`
+- **Test inside Docker:** `docker-compose run --rm test-e2e`
 
 ## API Endpoints
 

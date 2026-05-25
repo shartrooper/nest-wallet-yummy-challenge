@@ -1,5 +1,5 @@
 # Node.js 24 base image
-FROM node:24-alpine
+FROM node:24-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -15,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # Final stage for production
-FROM node:24-alpine
+FROM node:24-alpine AS production
 WORKDIR /app
 COPY --from=0 /app/node_modules ./node_modules
 COPY --from=0 /app/dist ./dist
