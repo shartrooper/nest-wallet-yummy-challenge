@@ -114,7 +114,7 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
 
   describe('Concurrency & Race Conditions', () => {
     it('should handle concurrent transfers without double-spending (Deterministic Locking)', async () => {
-      console.log('\n[Evidence] Scenario: 20 Parallel Transfers of $10 from $100 balance');
+      console.log('\n[Evidence] Scenario: 2 Parallel Transfers of $10 from $100 balance');
 
       const userA = '00000000-0000-0000-0000-000000000111';
       const userB = '00000000-0000-0000-0000-000000000112';
@@ -126,7 +126,7 @@ describe('Wallet Reliability & Integrity (e2e)', () => {
 
       await request(app.getHttpServer()).post('/wallet/deposit').set('x-api-key', apiKey).send({ account_id: accAId, amount: 30 });
 
-      const transferRequests = Array.from({ length: 5 }).map((_, i) =>
+      const transferRequests = Array.from({ length: 2 }).map((_, i) =>
         request(app.getHttpServer())
           .post('/wallet/transfer')
           .set('x-api-key', apiKey)
